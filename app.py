@@ -17,6 +17,14 @@ from spherical_generator import GenerationError
 
 st.set_page_config(page_title="Custom Christmas Lithophane Generator", page_icon=theme.favicon(),
                    layout="wide", initial_sidebar_state="auto")
+import analytics
+if st.query_params.get("admin") == "1":
+    import admin_view
+    admin_view.show()
+    st.stop()
+if not st.session_state.get("_visit_logged"):
+    st.session_state["_visit_logged"] = True
+    analytics.track("visit")
 theme.inject_theme()
 
 PAGES = ["3D Preview", "Photo & Seam", "Printing Guide", "Export STL"]
@@ -154,6 +162,9 @@ sig = hashlib.sha1(sj.encode() + hashlib.sha1(img_bytes).digest()).hexdigest()
 with st.container(key="nav"):
     chosen = seg("Section", PAGES, "page", PAGES[0], label_visibility="collapsed")
 page = chosen
+if st.session_state.get("_last_page") != page:
+    st.session_state["_last_page"] = page
+    analytics.track("page", page)
 
 
 def cta(text_html):
@@ -272,6 +283,7 @@ else:  # Export STL
         st.caption(f"{QUALITY_NOTE[qname]} The complete package is roughly {est:.0f} MB.")
         gen_sig = hashlib.sha1((sig + q.value).encode()).hexdigest()
         if st.button("Generate STL files", type="primary", key="gen_btn"):
+            analytics.track("generate_click", f"{qname} {s.shell.diameter_mm:.0f}mm")
             bar = st.progress(0.0, text="Starting")
             try:
                 r = generate(img_bytes, s, q, progress=lambda f, m: bar.progress(min(f * 0.92, 0.92), text=m))
@@ -281,6 +293,7 @@ else:  # Export STL
                                         gen_parts=part_sizes(r), gen_reports={k: v.stats for k, v in r.reports.items()},
                                         gen_wall=s.shell.min_wall_mm, gen_dia=s.shell.diameter_mm)
                 bar.progress(1.0, text="Done")
+                analytics.track("generate_ok", f"{qname} {s.shell.diameter_mm:.0f}mm")
                 bar.empty()
             except ExportBlocked as exc:
                 bar.empty(); st.session_state.pop("bundle", None); st.error(str(exc))
@@ -312,7 +325,8 @@ else:  # Export STL
                 st.markdown(f'<div class="xc"><span class="tag {tagcls}">{tag}</span>{theme.icon(kind)}'
                             f'<div class="body"><h4>{title}</h4><p>{desc}</p><div class="meta">{meta}</div></div></div>', unsafe_allow_html=True)
                 if ready:
-                    st.download_button("Download", data, file_name=fname, mime=mime, key=f"dl_{key}")
+                    st.download_button("Download", data, file_name=fname, mime=mime, key=f"dl_{key}",
+                                       on_click=analytics.track, args=("download", key))
                 else:
                     st.markdown('<div class="locked">Generate your files to download this</div>', unsafe_allow_html=True)
 
